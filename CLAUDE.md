@@ -19,7 +19,7 @@ cargo test <test_name>
 
 ## Architecture
 
-supervisord-rs is a Unix process supervisor daemon written in Rust. It is a single binary that acts as both the daemon (`supervisord run`) and the control client (`supervisord ctl <command>`).
+rvisor is a Unix process supervisor daemon written in Rust. It is a single binary that acts as both the daemon (`supervisord run`) and the control client (`supervisord ctl <command>`).
 
 ### IPC Model
 
@@ -52,7 +52,7 @@ CLI subcommand (main.rs)
 TOML (not INI like the original supervisord). Search order:
 1. `SUPERVISORD_RS_CONFIG` env var
 2. `./supervisord.toml`, `./etc/supervisord.toml`
-3. `/etc/supervisord.toml`, `/etc/supervisord-rs/supervisord.toml`, `/etc/supervisor/supervisord.toml`
+3. `/etc/supervisord.toml`, `/etc/rvisor/supervisord.toml`, `/etc/supervisor/supervisord.toml`
 4. `../etc/supervisord.toml`, `../supervisord.toml` (relative to executable)
 
 ### Daemonization

@@ -1,4 +1,4 @@
-# Example supervisord-rs configuration
+# Example rvisor configuration
 [supervisord]
 logfile = "/var/log/supervisord.log"
 pidfile = "/var/run/supervisord.pid"

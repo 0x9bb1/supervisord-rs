@@ -4,7 +4,7 @@ use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use supervisord_rs::{config, ipc, logging, service, supervisor};
+use rvisor::{config, ipc, logging, service, supervisor};
 
 #[derive(Parser, Debug)]
 #[command(name = "supervisord", version, about = "Rust-based supervisor daemon")]
@@ -270,7 +270,7 @@ fn resolve_config_path(explicit: Option<&Path>) -> PathBuf {
     if let Some(path) = explicit {
         return path.to_path_buf();
     }
-    if let Ok(path) = std::env::var("SUPERVISORD_RS_CONFIG") {
+    if let Ok(path) = std::env::var("RVISOR_CONFIG") {
         if !path.trim().is_empty() {
             return PathBuf::from(path);
         }
@@ -287,7 +287,7 @@ fn find_default_config_path() -> Option<PathBuf> {
         cwd.as_ref().map(|dir| dir.join("supervisord.toml")),
         cwd.as_ref().map(|dir| dir.join("etc").join("supervisord.toml")),
         Some(PathBuf::from("/etc/supervisord.toml")),
-        Some(PathBuf::from("/etc/supervisord-rs/supervisord.toml")),
+        Some(PathBuf::from("/etc/rvisor/supervisord.toml")),
         Some(PathBuf::from("/etc/supervisor/supervisord.toml")),
         current_exe_relative("../etc/supervisord.toml"),
         current_exe_relative("../supervisord.toml"),

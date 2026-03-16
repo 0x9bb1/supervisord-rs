@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use supervisord_rs::{config, ipc, service, supervisor};
+use rvisor::{config, ipc, service, supervisor};
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 use std::sync::{Mutex as StdMutex, OnceLock};
@@ -779,7 +779,7 @@ pidfile = "{}"
     );
     write_config(&config_path, &config_text);
 
-    let binary = env!("CARGO_BIN_EXE_supervisord-rs");
+    let binary = env!("CARGO_BIN_EXE_rvisor");
     let mut child = tokio::process::Command::new(binary)
         .arg("-c")
         .arg(&config_path)
@@ -827,7 +827,7 @@ async fn sighup_triggers_reload() {
     );
     write_config(&config_path, &config_text);
 
-    let binary = env!("CARGO_BIN_EXE_supervisord-rs");
+    let binary = env!("CARGO_BIN_EXE_rvisor");
     let mut child = tokio::process::Command::new(binary)
         .arg("-c")
         .arg(&config_path)
@@ -1392,7 +1392,7 @@ fn service_env_lock() -> &'static StdMutex<()> {
 
 /// Helper: spawn the real binary and wait for the socket to appear.
 async fn spawn_binary_daemon(config_path: &Path, sock_path: &Path) -> tokio::process::Child {
-    let binary = env!("CARGO_BIN_EXE_supervisord-rs");
+    let binary = env!("CARGO_BIN_EXE_rvisor");
     let child = tokio::process::Command::new(binary)
         .arg("-c")
         .arg(config_path)

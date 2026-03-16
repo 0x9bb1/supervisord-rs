@@ -1,4 +1,4 @@
-# supervisord-rs
+# rvisor
 
 Rust-based process supervisor with a local IPC control plane and supervisorctl-like CLI (minus XML-RPC/Web UI and INI config).
 
@@ -11,7 +11,7 @@ cargo build
 ## Install
 
 ```bash
-cargo install --git https://github.com/0x9bb1/supervisord-rs.git
+cargo install --git https://github.com/0x9bb1/rvisor.git
 ```
 
 ## Test
@@ -27,18 +27,18 @@ cargo test
 cp examples/supervisord.toml ./supervisord.toml
 
 # foreground
-supervisord-rs -c /path/to/supervisord.toml run
+rvisor -c /path/to/supervisord.toml run
 
 # control
-supervisord-rs -c /path/to/supervisord.toml ctl status
+rvisor -c /path/to/supervisord.toml ctl status
 ```
 
 If `-c` is omitted, the CLI searches for a config in this order:
-1. `SUPERVISORD_RS_CONFIG` (when set)
+1. `RVISOR_CONFIG` (when set)
 2. `./supervisord.toml`
 3. `./etc/supervisord.toml`
 4. `/etc/supervisord.toml`
-5. `/etc/supervisord-rs/supervisord.toml`
+5. `/etc/rvisor/supervisord.toml`
 6. `/etc/supervisor/supervisord.toml`
 7. `../etc/supervisord.toml` (relative to the executable)
 8. `../supervisord.toml` (relative to the executable)

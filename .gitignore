@@ -21,3 +21,4 @@ tmp/
 coverage.xml
 nosetests.xml
 .cache/
+TODO.md

@@ -39,17 +39,17 @@ jobs:
       - name: Package (unix)
         if: runner.os != 'Windows'
         run: |
-          name="supervisord-rs-${{ github.ref_name }}-${{ matrix.target }}"
+          name="rvisor-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/supervisord-rs" "$name"
+          cp "target/${{ matrix.target }}/release/rvisor" "$name"
           tar -czf "dist/$name.tar.gz" "$name"
 
       - name: Package (windows)
         if: runner.os == 'Windows'
         run: |
-          $name = "supervisord-rs-${{ github.ref_name }}-${{ matrix.target }}"
+          $name = "rvisor-${{ github.ref_name }}-${{ matrix.target }}"
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "target\\${{ matrix.target }}\\release\\supervisord-rs.exe" "$name.exe"
+          Copy-Item "target\\${{ matrix.target }}\\release\\rvisor.exe" "$name.exe"
           Compress-Archive -Path "$name.exe" -DestinationPath "dist\\$name.zip"
 
       - name: Upload artifact

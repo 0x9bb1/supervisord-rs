@@ -111,11 +111,11 @@ fn resolve_service_dir() -> anyhow::Result<PathBuf> {
 fn service_file_path(dir: &Path) -> anyhow::Result<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(dir.join("com.supervisord.rs.plist"));
+        return Ok(dir.join("com.rvisor.plist"));
     }
     #[cfg(not(target_os = "macos"))]
     {
-        return Ok(dir.join("supervisord-rs.service"));
+        return Ok(dir.join("rvisor.service"));
     }
 }
 
@@ -132,7 +132,7 @@ fn service_content(config_path: Option<&Path>) -> anyhow::Result<String> {
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.supervisord.rs</string>
+  <string>com.rvisor</string>
   <key>ProgramArguments</key>
   <array>
     <string>{}</string>
@@ -152,7 +152,7 @@ fn service_content(config_path: Option<&Path>) -> anyhow::Result<String> {
     {
         return Ok(format!(
             r#"[Unit]
-Description=supervisord-rs
+Description=rvisor
 
 [Service]
 ExecStart={} run{}
@@ -194,7 +194,7 @@ fn start_service(_path: &Path) -> anyhow::Result<String> {
         let status = std::process::Command::new("systemctl")
             .arg("--user")
             .arg("start")
-            .arg("supervisord-rs.service")
+            .arg("rvisor.service")
             .status()
             .context("systemctl start")?;
         ensure_success("systemctl start", status)?;
@@ -218,7 +218,7 @@ fn stop_service(_path: &Path) -> anyhow::Result<String> {
         let status = std::process::Command::new("systemctl")
             .arg("--user")
             .arg("stop")
-            .arg("supervisord-rs.service")
+            .arg("rvisor.service")
             .status()
             .context("systemctl stop")?;
         ensure_success("systemctl stop", status)?;
@@ -231,7 +231,7 @@ fn status_service(_path: &Path) -> anyhow::Result<String> {
     {
         let output = std::process::Command::new("launchctl")
             .arg("list")
-            .arg("com.supervisord.rs")
+            .arg("com.rvisor")
             .output()
             .context("launchctl list")?;
         if !output.status.success() {
@@ -242,7 +242,7 @@ fn status_service(_path: &Path) -> anyhow::Result<String> {
         let mut status = "-".to_string();
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 && parts[2] == "com.supervisord.rs" {
+            if parts.len() >= 3 && parts[2] == "com.rvisor" {
                 pid = parts[0].to_string();
                 status = parts[1].to_string();
                 break;
@@ -255,7 +255,7 @@ fn status_service(_path: &Path) -> anyhow::Result<String> {
         let output = std::process::Command::new("systemctl")
             .arg("--user")
             .arg("show")
-            .arg("supervisord-rs.service")
+            .arg("rvisor.service")
             .arg("-p")
             .arg("ActiveState")
             .arg("-p")
@@ -294,7 +294,7 @@ fn reload_service(_path: &Path) -> anyhow::Result<String> {
     {
         use nix::unistd::Uid;
         let uid = Uid::current().as_raw();
-        let target = format!("gui/{uid}/com.supervisord.rs");
+        let target = format!("gui/{uid}/com.rvisor");
         let status = std::process::Command::new("launchctl")
             .arg("kickstart")
             .arg("-k")
@@ -309,7 +309,7 @@ fn reload_service(_path: &Path) -> anyhow::Result<String> {
         let status = std::process::Command::new("systemctl")
             .arg("--user")
             .arg("reload")
-            .arg("supervisord-rs.service")
+            .arg("rvisor.service")
             .status()
             .context("systemctl reload")?;
         ensure_success("systemctl reload", status)?;
@@ -344,7 +344,7 @@ fn enable_service() -> anyhow::Result<()> {
         let status = std::process::Command::new("systemctl")
             .arg("--user")
             .arg("enable")
-            .arg("supervisord-rs.service")
+            .arg("rvisor.service")
             .status()
             .context("systemctl enable")?;
         ensure_success("systemctl enable", status)?;
@@ -362,7 +362,7 @@ fn disable_service() -> anyhow::Result<()> {
         let status = std::process::Command::new("systemctl")
             .arg("--user")
             .arg("disable")
-            .arg("supervisord-rs.service")
+            .arg("rvisor.service")
             .status()
             .context("systemctl disable")?;
         ensure_success("systemctl disable", status)?;
