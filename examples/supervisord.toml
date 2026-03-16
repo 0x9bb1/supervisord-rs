@@ -1,0 +1,27 @@
+# Example supervisord-rs configuration
+[supervisord]
+logfile = "/var/log/supervisord.log"
+pidfile = "/var/run/supervisord.pid"
+sock_path = "/tmp/supervisord.sock"
+umask = 22
+minfds = 1024
+
+[[programs]]
+name = "example"
+command = "sleep 60"
+cwd = "."
+autostart = true
+autorestart = "unexpected"
+numprocs = 1
+stdout_log = "/tmp/example.out.log"
+stderr_log = "/tmp/example.err.log"
+stdout_log_max_bytes = 1048576
+stdout_log_backups = 5
+stderr_log_max_bytes = 1048576
+stderr_log_backups = 5
+startretries = 3
+startsecs = 1
+exitcodes = [0]
+stopsignal = "TERM"
+stopwaitsecs = 10
+killasgroup = false
