@@ -1,11 +1,11 @@
 use crate::config::ProgramConfig;
 use anyhow::Context;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::task::JoinHandle;
-use std::collections::HashMap;
 
 pub struct SpawnedProcess {
     pub pid: i32,
@@ -24,7 +24,7 @@ pub fn spawn_program(
         cmd.pre_exec(|| {
             // Put the child in its own process group so killasgroup works correctly.
             nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+                .map_err(std::io::Error::other)?;
             // Ask the kernel to send SIGKILL to this child (and its entire process
             // group) when the supervisor process dies for any reason, including
             // SIGKILL or a crash.  This prevents orphaned processes.
@@ -148,8 +148,7 @@ async fn write_with_rotation<R: AsyncRead + Unpin>(
                 if limit == 0 {
                     read - offset
                 } else {
-                    let remaining = (limit - size).min((read - offset) as u64) as usize;
-                    remaining
+                    (limit - size).min((read - offset) as u64) as usize
                 }
             } else {
                 read - offset
@@ -189,20 +188,18 @@ async fn rotate_logs(path: &PathBuf, backups: u32) -> anyhow::Result<()> {
     for i in (1..=backups).rev() {
         let src = PathBuf::from(format!("{}.{}", path.display(), i));
         let dst = PathBuf::from(format!("{}.{}", path.display(), i + 1));
-        if tokio::fs::try_exists(&src).await.unwrap_or(false) {
-            if tokio::fs::rename(&src, &dst).await.is_err() {
-                if tokio::fs::copy(&src, &dst).await.is_ok() {
-                    let _ = tokio::fs::remove_file(&src).await;
-                }
-            }
+        if tokio::fs::try_exists(&src).await.unwrap_or(false)
+            && tokio::fs::rename(&src, &dst).await.is_err()
+            && tokio::fs::copy(&src, &dst).await.is_ok()
+        {
+            let _ = tokio::fs::remove_file(&src).await;
         }
     }
     if tokio::fs::try_exists(path).await.unwrap_or(false) {
         let dst = PathBuf::from(format!("{}.1", path.display()));
-        if tokio::fs::rename(path, &dst).await.is_err() {
-            if tokio::fs::copy(path, &dst).await.is_ok() {
-                let _ = tokio::fs::remove_file(path).await;
-            }
+        if tokio::fs::rename(path, &dst).await.is_err() && tokio::fs::copy(path, &dst).await.is_ok()
+        {
+            let _ = tokio::fs::remove_file(path).await;
         }
     }
     Ok(())

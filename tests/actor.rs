@@ -80,7 +80,11 @@ async fn start_already_running_is_idempotent() {
 
     // Second start should return "already running"
     let result = handle.start(Some("gamma".to_string())).await.unwrap();
-    assert!(result.contains("already running"), "expected 'already running', got: {}", result);
+    assert!(
+        result.contains("already running"),
+        "expected 'already running', got: {}",
+        result
+    );
 
     // Status should still be RUNNING with a pid
     let statuses = handle.status(Some("gamma".to_string())).await.unwrap();
@@ -102,7 +106,11 @@ async fn stop_running_program_transitions_to_stopped() {
     assert_eq!(statuses[0].state, "RUNNING");
 
     let result = handle.stop(Some("delta".to_string())).await.unwrap();
-    assert!(result.contains("stopped"), "expected 'stopped', got: {}", result);
+    assert!(
+        result.contains("stopped"),
+        "expected 'stopped', got: {}",
+        result
+    );
 
     let statuses = handle.status(Some("delta".to_string())).await.unwrap();
     assert_eq!(statuses[0].state, "STOPPED");
@@ -161,10 +169,16 @@ async fn exit_autorestart_never_transitions_to_exited() {
 async fn signal_unknown_program_returns_error() {
     let handle = spawn_test_actor(vec![]);
 
-    let result = handle.signal(Some("nonexistent".to_string()), "TERM".to_string()).await;
+    let result = handle
+        .signal(Some("nonexistent".to_string()), "TERM".to_string())
+        .await;
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("unknown program") || msg.contains("nonexistent"), "error: {}", msg);
+    assert!(
+        msg.contains("unknown program") || msg.contains("nonexistent"),
+        "error: {}",
+        msg
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

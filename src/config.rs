@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub supervisord: SupervisordConfig,
+    pub supervisor: SupervisorConfig,
     pub programs: Vec<ProgramConfig>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SupervisordConfig {
+pub struct SupervisorConfig {
     pub logfile: Option<PathBuf>,
     pub pidfile: Option<PathBuf>,
     pub sock_path: PathBuf,
@@ -60,12 +60,13 @@ pub struct ProgramConfig {
 
 #[derive(Debug, Deserialize)]
 struct ConfigFile {
-    supervisord: Option<SupervisordSection>,
+    #[serde(rename = "supervisord")]
+    supervisor: Option<SupervisorSection>,
     programs: Option<Vec<ProgramConfig>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct SupervisordSection {
+struct SupervisorSection {
     logfile: Option<PathBuf>,
     pidfile: Option<PathBuf>,
     sock_path: Option<PathBuf>,
@@ -107,22 +108,22 @@ pub fn load(path: Option<&Path>) -> anyhow::Result<Config> {
     let path = path.unwrap_or_else(|| Path::new("supervisord.toml"));
     if !path.exists() {
         return Ok(Config {
-            supervisord: SupervisordConfig::default(),
+            supervisor: SupervisorConfig::default(),
             programs: Vec::new(),
         });
     }
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("read config {}", path.display()))?;
-    let parsed: ConfigFile = toml::from_str(&content)
-        .with_context(|| format!("parse config {}", path.display()))?;
-    let supervisord = parsed
-        .supervisord
-        .map(SupervisordConfig::from)
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("read config {}", path.display()))?;
+    let parsed: ConfigFile =
+        toml::from_str(&content).with_context(|| format!("parse config {}", path.display()))?;
+    let supervisor = parsed
+        .supervisor
+        .map(SupervisorConfig::from)
         .unwrap_or_default();
     let programs = parsed.programs.unwrap_or_default();
     validate_programs(&programs)?;
     Ok(Config {
-        supervisord,
+        supervisor,
         programs,
     })
 }
@@ -130,9 +131,9 @@ pub fn load(path: Option<&Path>) -> anyhow::Result<Config> {
 pub fn template() -> String {
     r#"# supervisord.toml
 [supervisord]
-logfile = "/var/log/supervisord.log"
-pidfile = "/var/run/supervisord.pid"
-sock_path = "/tmp/supervisord.sock"
+logfile = "/var/log/rvisor.log"
+pidfile = "/var/run/rvisor.pid"
+sock_path = "/tmp/rvisor.sock"
 umask = 22
 minfds = 1024
 
@@ -159,12 +160,12 @@ killasgroup = false
     .to_string()
 }
 
-impl Default for SupervisordConfig {
+impl Default for SupervisorConfig {
     fn default() -> Self {
         Self {
             logfile: None,
             pidfile: None,
-            sock_path: PathBuf::from("/tmp/supervisord.sock"),
+            sock_path: PathBuf::from("/tmp/rvisor.sock"),
             umask: None,
             minfds: None,
             allowed_uids: Vec::new(),
@@ -172,9 +173,9 @@ impl Default for SupervisordConfig {
     }
 }
 
-impl From<SupervisordSection> for SupervisordConfig {
-    fn from(section: SupervisordSection) -> Self {
-        let mut config = SupervisordConfig::default();
+impl From<SupervisorSection> for SupervisorConfig {
+    fn from(section: SupervisorSection) -> Self {
+        let mut config = SupervisorConfig::default();
         if let Some(path) = section.logfile {
             config.logfile = Some(path);
         }
@@ -223,17 +224,12 @@ fn validate_programs(programs: &[ProgramConfig]) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Autorestart {
     Never,
     Always,
+    #[default]
     Unexpected,
-}
-
-impl Default for Autorestart {
-    fn default() -> Self {
-        Autorestart::Unexpected
-    }
 }
 
 impl<'de> Deserialize<'de> for Autorestart {
@@ -254,7 +250,11 @@ impl<'de> Deserialize<'de> for Autorestart {
             where
                 E: serde::de::Error,
             {
-                Ok(if v { Autorestart::Always } else { Autorestart::Never })
+                Ok(if v {
+                    Autorestart::Always
+                } else {
+                    Autorestart::Never
+                })
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -323,8 +323,7 @@ mod tests {
     #[test]
     fn autorestart_string_always() {
         let p: ProgramConfig =
-            toml::from_str("name = \"p\"\ncommand = \"echo\"\nautorestart = \"always\"\n")
-                .unwrap();
+            toml::from_str("name = \"p\"\ncommand = \"echo\"\nautorestart = \"always\"\n").unwrap();
         assert_eq!(p.autorestart, Autorestart::Always);
     }
 
@@ -345,8 +344,7 @@ mod tests {
 
     #[test]
     fn autorestart_default_is_unexpected() {
-        let p: ProgramConfig =
-            toml::from_str("name = \"p\"\ncommand = \"echo\"\n").unwrap();
+        let p: ProgramConfig = toml::from_str("name = \"p\"\ncommand = \"echo\"\n").unwrap();
         assert_eq!(p.autorestart, Autorestart::Unexpected);
     }
 
@@ -354,8 +352,7 @@ mod tests {
 
     #[test]
     fn defaults_applied_on_minimal_program() {
-        let p: ProgramConfig =
-            toml::from_str("name = \"p\"\ncommand = \"echo\"\n").unwrap();
+        let p: ProgramConfig = toml::from_str("name = \"p\"\ncommand = \"echo\"\n").unwrap();
         assert!(p.autostart);
         assert_eq!(p.numprocs, 1);
         assert_eq!(p.startretries, 3);
@@ -397,9 +394,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_duplicate_names() {
-        assert!(
-            validate_programs(&[make_program("p", "echo"), make_program("p", "ls")]).is_err()
-        );
+        assert!(validate_programs(&[make_program("p", "echo"), make_program("p", "ls")]).is_err());
     }
 
     #[test]
@@ -425,7 +420,7 @@ mod tests {
         let mut b = make_program("b", "echo");
         b.autostart = false;
         let config = Config {
-            supervisord: SupervisordConfig::default(),
+            supervisor: SupervisorConfig::default(),
             programs: vec![a, b],
         };
         assert_eq!(config.autostart_programs(), vec!["a"]);
@@ -436,7 +431,7 @@ mod tests {
         let mut p = make_program("p", "echo");
         p.autostart = false;
         let config = Config {
-            supervisord: SupervisordConfig::default(),
+            supervisor: SupervisorConfig::default(),
             programs: vec![p],
         };
         assert!(config.autostart_programs().is_empty());
@@ -459,7 +454,10 @@ autostart = false"#
         )
         .unwrap();
         let config = load(Some(file.path())).unwrap();
-        assert_eq!(config.supervisord.sock_path, PathBuf::from("/tmp/test_load.sock"));
+        assert_eq!(
+            config.supervisor.sock_path,
+            PathBuf::from("/tmp/test_load.sock")
+        );
         assert_eq!(config.programs.len(), 1);
         assert_eq!(config.programs[0].name, "hello");
         assert!(!config.programs[0].autostart);
@@ -469,7 +467,10 @@ autostart = false"#
     fn load_nonexistent_path_returns_defaults() {
         let config = load(Some(Path::new("/nonexistent/path/supervisord.toml"))).unwrap();
         assert!(config.programs.is_empty());
-        assert_eq!(config.supervisord.sock_path, PathBuf::from("/tmp/supervisord.sock"));
+        assert_eq!(
+            config.supervisor.sock_path,
+            PathBuf::from("/tmp/rvisor.sock")
+        );
     }
 
     #[test]

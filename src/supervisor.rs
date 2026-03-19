@@ -166,11 +166,7 @@ impl Rvisor {
                 .get(target)
                 .map(|program| vec![program_to_status(program)])
                 .unwrap_or_default(),
-            None => self
-                .programs
-                .values()
-                .map(program_to_status)
-                .collect(),
+            None => self.programs.values().map(program_to_status).collect(),
         }
     }
 
@@ -210,7 +206,8 @@ impl Rvisor {
             "processname:{} groupname:{} pid:{} state:{}",
             name,
             name,
-            pid.map(|p| p.to_string()).unwrap_or_else(|| "0".to_string()),
+            pid.map(|p| p.to_string())
+                .unwrap_or_else(|| "0".to_string()),
             state.as_str()
         );
         let event = Event {
@@ -231,10 +228,11 @@ impl Rvisor {
 }
 
 fn program_to_status(program: &ProgramHandle) -> ProgramStatus {
-    let uptime = if matches!(program.state, ProgramState::Running | ProgramState::Starting) {
-        program
-            .start_time
-            .map(|t| t.elapsed().as_secs())
+    let uptime = if matches!(
+        program.state,
+        ProgramState::Running | ProgramState::Starting
+    ) {
+        program.start_time.map(|t| t.elapsed().as_secs())
     } else {
         None
     };
@@ -305,7 +303,9 @@ pub fn kill_process_tree(root_pid: i32, signal: &str, group: bool) {
         use nix::sys::signal::kill;
         use nix::unistd::Pid;
 
-        let Ok(signal) = parse_signal(signal) else { return };
+        let Ok(signal) = parse_signal(signal) else {
+            return;
+        };
 
         // Optional: kill the entire original process group.
         if group {

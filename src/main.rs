@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand};
-use std::path::{Path, PathBuf};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use rvisor::{actor, config, ipc, logging, service, supervisor};
 
 #[derive(Parser, Debug)]
-#[command(name = "supervisord", version, about = "Rust-based supervisor daemon")]
+#[command(name = "rvisor", version, about = "Rust-based supervisor daemon")]
 struct Args {
     #[arg(short = 'c', long = "configuration")]
     configuration: Option<PathBuf>,
@@ -220,9 +220,9 @@ async fn run_async(args: Args, config_path: PathBuf) -> anyhow::Result<()> {
     }
 
     let config = config::load(Some(&config_path))?;
-    apply_umask(config.supervisord.umask)?;
-    ensure_minfds(config.supervisord.minfds)?;
-    if let Some(pidfile) = &config.supervisord.pidfile {
+    apply_umask(config.supervisor.umask)?;
+    ensure_minfds(config.supervisor.minfds)?;
+    if let Some(pidfile) = &config.supervisor.pidfile {
         check_single_instance(pidfile)?;
         write_pidfile(pidfile)?;
     }
@@ -232,23 +232,20 @@ async fn run_async(args: Args, config_path: PathBuf) -> anyhow::Result<()> {
         config_path,
         config.programs.clone(),
         global_env,
-        config.supervisord.pidfile.clone(),
-        config.supervisord.sock_path.clone(),
-        config.supervisord.logfile.clone(),
+        config.supervisor.pidfile.clone(),
+        config.supervisor.sock_path.clone(),
+        config.supervisor.logfile.clone(),
     );
     // spawn_actor internally handles autostart (with expanded numprocs names)
 
-    let sock_path = config.supervisord.sock_path.clone();
-    let allowed_uids = config.supervisord.allowed_uids.clone();
+    let sock_path = config.supervisor.sock_path.clone();
+    let allowed_uids = config.supervisor.allowed_uids.clone();
     setup_signal_handlers(handle.clone());
     ipc::run_server(&sock_path, handle, allowed_uids).await?;
     Ok(())
 }
 
-async fn resolve_sock_path(
-    config_path: &Path,
-    serverurl: Option<&str>,
-) -> anyhow::Result<PathBuf> {
+async fn resolve_sock_path(config_path: &Path, serverurl: Option<&str>) -> anyhow::Result<PathBuf> {
     if let Some(url) = serverurl {
         if let Some(path) = url.strip_prefix("unix://") {
             return Ok(PathBuf::from(path));
@@ -256,7 +253,7 @@ async fn resolve_sock_path(
         return Ok(PathBuf::from(url));
     }
     let config = config::load(Some(config_path))?;
-    Ok(config.supervisord.sock_path)
+    Ok(config.supervisor.sock_path)
 }
 
 fn resolve_config_path(explicit: Option<&Path>) -> PathBuf {
@@ -278,19 +275,18 @@ fn find_default_config_path() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok();
     let candidates = [
         cwd.as_ref().map(|dir| dir.join("supervisord.toml")),
-        cwd.as_ref().map(|dir| dir.join("etc").join("supervisord.toml")),
+        cwd.as_ref()
+            .map(|dir| dir.join("etc").join("supervisord.toml")),
         Some(PathBuf::from("/etc/supervisord.toml")),
         Some(PathBuf::from("/etc/rvisor/supervisord.toml")),
         Some(PathBuf::from("/etc/supervisor/supervisord.toml")),
         current_exe_relative("../etc/supervisord.toml"),
         current_exe_relative("../supervisord.toml"),
     ];
-    for candidate in candidates.into_iter().flatten() {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| candidate.exists())
 }
 
 fn current_exe_relative(path: &str) -> Option<PathBuf> {
@@ -299,99 +295,160 @@ fn current_exe_relative(path: &str) -> Option<PathBuf> {
     Some(dir.join(path))
 }
 
-async fn run_ctl(
-    sock_path: &Path,
-    command: CtlCommand,
-    json: bool,
-) -> anyhow::Result<()> {
+async fn run_ctl(sock_path: &Path, command: CtlCommand, json: bool) -> anyhow::Result<()> {
     match command {
         CtlCommand::Shell => {
             run_shell(sock_path).await?;
-            return Ok(());
+            Ok(())
         }
         CtlCommand::Help { command } => {
             print_help(command.as_deref());
-            return Ok(());
+            Ok(())
         }
         other => run_ctl_inner(sock_path, other, json).await,
     }
 }
 
-async fn run_ctl_inner(
-    sock_path: &Path,
-    command: CtlCommand,
-    json: bool,
-) -> anyhow::Result<()> {
-    let (command_name, program, lines, stream, follow, signal, offset, bytes, since, help_cmd) = match command {
-        CtlCommand::Start { program } => ("start", program, None, None, None, None, None, None, None, None),
-        CtlCommand::Restart { program } => ("restart", program, None, None, None, None, None, None, None, None),
-        CtlCommand::Status { program } => ("status", program, None, None, None, None, None, None, None, None),
-        CtlCommand::Stop { program } => ("stop", program, None, None, None, None, None, None, None, None),
-        CtlCommand::Reread => ("reread", None, None, None, None, None, None, None, None, None),
-        CtlCommand::Update => ("update", None, None, None, None, None, None, None, None, None),
-        CtlCommand::Reload => ("reload", None, None, None, None, None, None, None, None, None),
-        CtlCommand::Shutdown => ("shutdown", None, None, None, None, None, None, None, None, None),
-        CtlCommand::Pid => ("pid", None, None, None, None, None, None, None, None, None),
-        CtlCommand::Signal { signal, program } => {
-            ("signal", program, None, None, None, Some(signal), None, None, None, None)
-        }
-        CtlCommand::Logtail {
-            program,
-            lines,
-            bytes,
-            since,
-            stderr,
-            follow,
-        } => (
-            "logtail",
-            Some(program),
-            Some(lines),
-            Some(if stderr { "stderr" } else { "stdout" }.to_string()),
-            Some(follow),
-            None,
-            Some(0),
-            bytes,
-            since,
-            None,
-        ),
-        CtlCommand::Tail {
-            program,
-            lines,
-            stderr,
-            follow,
-        } => (
-            "logtail",
-            Some(program),
-            Some(lines),
-            Some(if stderr { "stderr" } else { "stdout" }.to_string()),
-            Some(follow),
-            None,
-            Some(0),
-            None,
-            None,
-            None,
-        ),
-        CtlCommand::Maintail { lines, follow } => (
-            "maintail",
-            None,
-            Some(lines),
-            None,
-            Some(follow),
-            None,
-            Some(0),
-            None,
-            None,
-            None,
-        ),
-        CtlCommand::Events => ("events", None, None, None, None, None, None, None, None, None),
-        CtlCommand::Avail => ("avail", None, None, None, None, None, None, None, None, None),
-        CtlCommand::Clear { program } => ("clear", program, None, None, None, None, None, None, None, None),
-        CtlCommand::Add { program } => ("add", Some(program), None, None, None, None, None, None, None, None),
-        CtlCommand::Remove { program } => ("remove", Some(program), None, None, None, None, None, None, None, None),
-        CtlCommand::Fg { program } => ("fg", Some(program), None, None, None, None, None, None, None, None),
-        CtlCommand::Help { command } => ("help", None, None, None, None, None, None, None, None, command),
-        CtlCommand::Shell => ("shell", None, None, None, None, None, None, None, None, None),
-    };
+async fn run_ctl_inner(sock_path: &Path, command: CtlCommand, json: bool) -> anyhow::Result<()> {
+    let (command_name, program, lines, stream, follow, signal, offset, bytes, since, help_cmd) =
+        match command {
+            CtlCommand::Start { program } => (
+                "start", program, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Restart { program } => (
+                "restart", program, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Status { program } => (
+                "status", program, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Stop { program } => (
+                "stop", program, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Reread => (
+                "reread", None, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Update => (
+                "update", None, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Reload => (
+                "reload", None, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Shutdown => (
+                "shutdown", None, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Pid => ("pid", None, None, None, None, None, None, None, None, None),
+            CtlCommand::Signal { signal, program } => (
+                "signal",
+                program,
+                None,
+                None,
+                None,
+                Some(signal),
+                None,
+                None,
+                None,
+                None,
+            ),
+            CtlCommand::Logtail {
+                program,
+                lines,
+                bytes,
+                since,
+                stderr,
+                follow,
+            } => (
+                "logtail",
+                Some(program),
+                Some(lines),
+                Some(if stderr { "stderr" } else { "stdout" }.to_string()),
+                Some(follow),
+                None,
+                Some(0),
+                bytes,
+                since,
+                None,
+            ),
+            CtlCommand::Tail {
+                program,
+                lines,
+                stderr,
+                follow,
+            } => (
+                "logtail",
+                Some(program),
+                Some(lines),
+                Some(if stderr { "stderr" } else { "stdout" }.to_string()),
+                Some(follow),
+                None,
+                Some(0),
+                None,
+                None,
+                None,
+            ),
+            CtlCommand::Maintail { lines, follow } => (
+                "maintail",
+                None,
+                Some(lines),
+                None,
+                Some(follow),
+                None,
+                Some(0),
+                None,
+                None,
+                None,
+            ),
+            CtlCommand::Events => (
+                "events", None, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Avail => (
+                "avail", None, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Clear { program } => (
+                "clear", program, None, None, None, None, None, None, None, None,
+            ),
+            CtlCommand::Add { program } => (
+                "add",
+                Some(program),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            CtlCommand::Remove { program } => (
+                "remove",
+                Some(program),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            CtlCommand::Fg { program } => (
+                "fg",
+                Some(program),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            CtlCommand::Help { command } => (
+                "help", None, None, None, None, None, None, None, None, command,
+            ),
+            CtlCommand::Shell => (
+                "shell", None, None, None, None, None, None, None, None, None,
+            ),
+        };
     let request = ipc::Request {
         command: command_name.to_string(),
         program,
@@ -447,7 +504,7 @@ async fn run_ctl_inner(
     if command_name == "events" {
         let framed = ipc::send_stream_request(sock_path, request).await?;
         run_event_stream(framed).await?;
-        return Ok(());
+        Ok(())
     } else {
         let response = ipc::send_request(sock_path, request).await?;
         if !response.ok {
@@ -464,8 +521,7 @@ async fn run_ctl_inner(
         match command_name {
             "status" => {
                 if let Some(data) = response.data {
-                    let statuses: Vec<supervisor::ProgramStatus> =
-                        serde_json::from_value(data)?;
+                    let statuses: Vec<supervisor::ProgramStatus> = serde_json::from_value(data)?;
                     for status in statuses {
                         let name = format!("{:<24}", status.name);
                         match status.state.as_str() {
@@ -585,7 +641,10 @@ async fn run_ctl_inner(
 }
 
 async fn run_logtail_stream(
-    mut framed: tokio_util::codec::Framed<tokio::net::UnixStream, tokio_util::codec::LengthDelimitedCodec>,
+    mut framed: tokio_util::codec::Framed<
+        tokio::net::UnixStream,
+        tokio_util::codec::LengthDelimitedCodec,
+    >,
 ) -> anyhow::Result<()> {
     use futures::StreamExt;
     while let Some(frame) = framed.next().await {
@@ -605,7 +664,10 @@ async fn run_logtail_stream(
 }
 
 async fn run_event_stream(
-    mut framed: tokio_util::codec::Framed<tokio::net::UnixStream, tokio_util::codec::LengthDelimitedCodec>,
+    mut framed: tokio_util::codec::Framed<
+        tokio::net::UnixStream,
+        tokio_util::codec::LengthDelimitedCodec,
+    >,
 ) -> anyhow::Result<()> {
     use futures::StreamExt;
     while let Some(frame) = framed.next().await {
@@ -622,7 +684,10 @@ async fn run_event_stream(
                 event.serial,
                 event.name,
                 event.state,
-                event.pid.map(|p| p.to_string()).unwrap_or_else(|| "0".to_string())
+                event
+                    .pid
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "0".to_string())
             );
         }
     }
@@ -639,10 +704,10 @@ fn print_help(command: Option<&str>) {
         "update" => println!("update - apply config changes"),
         "reload" => println!("reload - reread and update"),
         "shutdown" => println!("shutdown - stop all and exit"),
-        "pid" => println!("pid - show supervisord pid"),
+        "pid" => println!("pid - show rvisor pid"),
         "signal" => println!("signal <signal> [program] - send signal"),
         "tail" => println!("tail [--follow] <program> - tail program logs"),
-        "maintail" => println!("maintail [--follow] - tail supervisord log"),
+        "maintail" => println!("maintail [--follow] - tail rvisor log"),
         "clear" => println!("clear [program] - clear logs"),
         "add" => println!("add <program> - add program from config"),
         "remove" => println!("remove <program> - remove program"),
@@ -662,7 +727,7 @@ async fn run_shell(sock_path: &Path) -> anyhow::Result<()> {
     use std::io::{self, BufRead};
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    println!("supervisorctl shell (type 'exit' to quit)");
+    println!("rvisor ctl shell (type 'exit' to quit)");
     for line in stdin.lock().lines() {
         let line = line?;
         let line = line.trim();
@@ -695,41 +760,80 @@ async fn run_ctl_shell(sock_path: &Path, command: CtlCommand) -> anyhow::Result<
 
 fn parse_shell_command(cmd: &str, args: &[&str]) -> anyhow::Result<CtlCommand> {
     Ok(match cmd {
-        "status" => CtlCommand::Status { program: args.get(0).map(|s| s.to_string()) },
-        "start" => CtlCommand::Start { program: args.get(0).map(|s| s.to_string()) },
-        "stop" => CtlCommand::Stop { program: args.get(0).map(|s| s.to_string()) },
-        "restart" => CtlCommand::Restart { program: args.get(0).map(|s| s.to_string()) },
+        "status" => CtlCommand::Status {
+            program: args.first().map(|s| s.to_string()),
+        },
+        "start" => CtlCommand::Start {
+            program: args.first().map(|s| s.to_string()),
+        },
+        "stop" => CtlCommand::Stop {
+            program: args.first().map(|s| s.to_string()),
+        },
+        "restart" => CtlCommand::Restart {
+            program: args.first().map(|s| s.to_string()),
+        },
         "reread" => CtlCommand::Reread,
         "update" => CtlCommand::Update,
         "reload" => CtlCommand::Reload,
         "shutdown" => CtlCommand::Shutdown,
         "pid" => CtlCommand::Pid,
         "signal" => {
-            let signal = args.get(0).ok_or_else(|| anyhow::anyhow!("signal required"))?;
+            let signal = args
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("signal required"))?;
             let program = args.get(1).map(|s| s.to_string());
-            CtlCommand::Signal { signal: signal.to_string(), program }
+            CtlCommand::Signal {
+                signal: signal.to_string(),
+                program,
+            }
         }
         "tail" => {
-            let program = args.get(0).ok_or_else(|| anyhow::anyhow!("program required"))?;
-            CtlCommand::Tail { program: program.to_string(), lines: 10, stderr: false, follow: false }
+            let program = args
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("program required"))?;
+            CtlCommand::Tail {
+                program: program.to_string(),
+                lines: 10,
+                stderr: false,
+                follow: false,
+            }
         }
-        "maintail" => CtlCommand::Maintail { lines: 10, follow: false },
-        "clear" => CtlCommand::Clear { program: args.get(0).map(|s| s.to_string()) },
+        "maintail" => CtlCommand::Maintail {
+            lines: 10,
+            follow: false,
+        },
+        "clear" => CtlCommand::Clear {
+            program: args.first().map(|s| s.to_string()),
+        },
         "add" => {
-            let program = args.get(0).ok_or_else(|| anyhow::anyhow!("program required"))?;
-            CtlCommand::Add { program: program.to_string() }
+            let program = args
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("program required"))?;
+            CtlCommand::Add {
+                program: program.to_string(),
+            }
         }
         "remove" => {
-            let program = args.get(0).ok_or_else(|| anyhow::anyhow!("program required"))?;
-            CtlCommand::Remove { program: program.to_string() }
+            let program = args
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("program required"))?;
+            CtlCommand::Remove {
+                program: program.to_string(),
+            }
         }
         "avail" => CtlCommand::Avail,
         "events" => CtlCommand::Events,
         "fg" => {
-            let program = args.get(0).ok_or_else(|| anyhow::anyhow!("program required"))?;
-            CtlCommand::Fg { program: program.to_string() }
+            let program = args
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("program required"))?;
+            CtlCommand::Fg {
+                program: program.to_string(),
+            }
         }
-        "help" => CtlCommand::Help { command: args.get(0).map(|s| s.to_string()) },
+        "help" => CtlCommand::Help {
+            command: args.first().map(|s| s.to_string()),
+        },
         other => anyhow::bail!("unknown command {}", other),
     })
 }
@@ -850,10 +954,11 @@ fn setup_signal_handlers(handle: actor::RvisorHandle) {
             if let Ok(mut hup) = signal(SignalKind::hangup()) {
                 while hup.recv().await.is_some() {
                     let config_path = handle_hup.config_path.clone();
-                    if let Some(config) = tokio::task::spawn_blocking(move || config::load(Some(&config_path)))
-                        .await
-                        .ok()
-                        .and_then(|r| r.ok())
+                    if let Some(config) =
+                        tokio::task::spawn_blocking(move || config::load(Some(&config_path)))
+                            .await
+                            .ok()
+                            .and_then(|r| r.ok())
                     {
                         let _ = handle_hup.update(config).await;
                     }
@@ -866,15 +971,13 @@ fn setup_signal_handlers(handle: actor::RvisorHandle) {
             let mut sigterm = signal(SignalKind::terminate()).ok();
             let mut sigint = signal(SignalKind::interrupt()).ok();
             let mut sigquit = signal(SignalKind::quit()).ok();
-            loop {
-                tokio::select! {
-                    _ = async { if let Some(sig) = &mut sigterm { sig.recv().await } else { None } } => {},
-                    _ = async { if let Some(sig) = &mut sigint { sig.recv().await } else { None } } => {},
-                    _ = async { if let Some(sig) = &mut sigquit { sig.recv().await } else { None } } => {},
-                }
-                let _ = handle_shutdown.shutdown().await;
-                std::process::exit(0);
+            tokio::select! {
+                _ = async { if let Some(sig) = &mut sigterm { sig.recv().await } else { None } } => {},
+                _ = async { if let Some(sig) = &mut sigint { sig.recv().await } else { None } } => {},
+                _ = async { if let Some(sig) = &mut sigquit { sig.recv().await } else { None } } => {},
             }
+            let _ = handle_shutdown.shutdown().await;
+            std::process::exit(0);
         });
     }
 }

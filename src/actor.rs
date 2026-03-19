@@ -1,10 +1,10 @@
 use crate::config::{Autorestart, Config, ProgramConfig};
 use crate::process;
-use crate::supervisor::{
-    Event, ProgramHandle, ProgramState, ProgramStatus, ReloadSummary, RereadSummary,
-    Rvisor, UpdateSummary,
-};
 use crate::supervisor::expand_programs;
+use crate::supervisor::{
+    Event, ProgramHandle, ProgramState, ProgramStatus, ReloadSummary, RereadSummary, Rvisor,
+    UpdateSummary,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -17,28 +17,90 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub enum Command {
     // External
-    Status { program: Option<String>, reply: oneshot::Sender<Vec<ProgramStatus>> },
-    Start { program: Option<String>, reply: oneshot::Sender<anyhow::Result<String>> },
-    Stop { program: Option<String>, reply: oneshot::Sender<anyhow::Result<String>> },
-    Restart { program: Option<String>, reply: oneshot::Sender<anyhow::Result<String>> },
-    Signal { program: Option<String>, signal: String, reply: oneshot::Sender<anyhow::Result<String>> },
-    Reread { config: Config, reply: oneshot::Sender<anyhow::Result<RereadSummary>> },
-    Update { config: Config, reply: oneshot::Sender<anyhow::Result<UpdateSummary>> },
-    Reload { config: Config, reply: oneshot::Sender<anyhow::Result<ReloadSummary>> },
-    Avail { reply: oneshot::Sender<Vec<String>> },
-    Pid { reply: oneshot::Sender<u32> },
-    Clear { program: Option<String>, reply: oneshot::Sender<anyhow::Result<String>> },
-    Add { name: String, config: Config, reply: oneshot::Sender<anyhow::Result<String>> },
-    Remove { name: String, reply: oneshot::Sender<anyhow::Result<String>> },
-    EventsSubscribe { reply: oneshot::Sender<broadcast::Receiver<Event>> },
-    LogPath { name: String, stream: String, reply: oneshot::Sender<anyhow::Result<PathBuf>> },
-    MainLogPath { reply: oneshot::Sender<Option<PathBuf>> },
-    Shutdown { reply: oneshot::Sender<anyhow::Result<()>> },
+    Status {
+        program: Option<String>,
+        reply: oneshot::Sender<Vec<ProgramStatus>>,
+    },
+    Start {
+        program: Option<String>,
+        reply: oneshot::Sender<anyhow::Result<String>>,
+    },
+    Stop {
+        program: Option<String>,
+        reply: oneshot::Sender<anyhow::Result<String>>,
+    },
+    Restart {
+        program: Option<String>,
+        reply: oneshot::Sender<anyhow::Result<String>>,
+    },
+    Signal {
+        program: Option<String>,
+        signal: String,
+        reply: oneshot::Sender<anyhow::Result<String>>,
+    },
+    Reread {
+        config: Config,
+        reply: oneshot::Sender<anyhow::Result<RereadSummary>>,
+    },
+    Update {
+        config: Config,
+        reply: oneshot::Sender<anyhow::Result<UpdateSummary>>,
+    },
+    Reload {
+        config: Config,
+        reply: oneshot::Sender<anyhow::Result<ReloadSummary>>,
+    },
+    Avail {
+        reply: oneshot::Sender<Vec<String>>,
+    },
+    Pid {
+        reply: oneshot::Sender<u32>,
+    },
+    Clear {
+        program: Option<String>,
+        reply: oneshot::Sender<anyhow::Result<String>>,
+    },
+    Add {
+        name: String,
+        config: Config,
+        reply: oneshot::Sender<anyhow::Result<String>>,
+    },
+    Remove {
+        name: String,
+        reply: oneshot::Sender<anyhow::Result<String>>,
+    },
+    EventsSubscribe {
+        reply: oneshot::Sender<broadcast::Receiver<Event>>,
+    },
+    LogPath {
+        name: String,
+        stream: String,
+        reply: oneshot::Sender<anyhow::Result<PathBuf>>,
+    },
+    MainLogPath {
+        reply: oneshot::Sender<Option<PathBuf>>,
+    },
+    Shutdown {
+        reply: oneshot::Sender<anyhow::Result<()>>,
+    },
     // Internal (from worker tasks)
-    InternalReady { name: String, pid: i32 },
-    InternalExit { name: String, pid: i32, exit_code: i32 },
-    InternalStopped { name: String, pid: i32, result: anyhow::Result<()> },
-    InternalAutostart { name: String },
+    InternalReady {
+        name: String,
+        pid: i32,
+    },
+    InternalExit {
+        name: String,
+        pid: i32,
+        exit_code: i32,
+    },
+    InternalStopped {
+        name: String,
+        pid: i32,
+        result: anyhow::Result<()>,
+    },
+    InternalAutostart {
+        name: String,
+    },
 }
 
 #[derive(Clone)]
@@ -93,28 +155,40 @@ impl RvisorHandle {
     }
 
     pub async fn status(&self, program: Option<String>) -> anyhow::Result<Vec<ProgramStatus>> {
-        self.send_infallible(|reply| Command::Status { program, reply }).await
+        self.send_infallible(|reply| Command::Status { program, reply })
+            .await
     }
     pub async fn start(&self, program: Option<String>) -> anyhow::Result<String> {
-        self.send_fallible(|reply| Command::Start { program, reply }).await
+        self.send_fallible(|reply| Command::Start { program, reply })
+            .await
     }
     pub async fn stop(&self, program: Option<String>) -> anyhow::Result<String> {
-        self.send_fallible(|reply| Command::Stop { program, reply }).await
+        self.send_fallible(|reply| Command::Stop { program, reply })
+            .await
     }
     pub async fn restart(&self, program: Option<String>) -> anyhow::Result<String> {
-        self.send_fallible(|reply| Command::Restart { program, reply }).await
+        self.send_fallible(|reply| Command::Restart { program, reply })
+            .await
     }
     pub async fn signal(&self, program: Option<String>, signal: String) -> anyhow::Result<String> {
-        self.send_fallible(|reply| Command::Signal { program, signal, reply }).await
+        self.send_fallible(|reply| Command::Signal {
+            program,
+            signal,
+            reply,
+        })
+        .await
     }
     pub async fn reread(&self, config: Config) -> anyhow::Result<RereadSummary> {
-        self.send_fallible(|reply| Command::Reread { config, reply }).await
+        self.send_fallible(|reply| Command::Reread { config, reply })
+            .await
     }
     pub async fn update(&self, config: Config) -> anyhow::Result<UpdateSummary> {
-        self.send_fallible(|reply| Command::Update { config, reply }).await
+        self.send_fallible(|reply| Command::Update { config, reply })
+            .await
     }
     pub async fn reload(&self, config: Config) -> anyhow::Result<ReloadSummary> {
-        self.send_fallible(|reply| Command::Reload { config, reply }).await
+        self.send_fallible(|reply| Command::Reload { config, reply })
+            .await
     }
     pub async fn avail(&self) -> anyhow::Result<Vec<String>> {
         self.send_infallible(|reply| Command::Avail { reply }).await
@@ -123,25 +197,40 @@ impl RvisorHandle {
         self.send_infallible(|reply| Command::Pid { reply }).await
     }
     pub async fn clear(&self, program: Option<String>) -> anyhow::Result<String> {
-        self.send_fallible(|reply| Command::Clear { program, reply }).await
+        self.send_fallible(|reply| Command::Clear { program, reply })
+            .await
     }
     pub async fn add(&self, name: String, config: Config) -> anyhow::Result<String> {
-        self.send_fallible(|reply| Command::Add { name, config, reply }).await
+        self.send_fallible(|reply| Command::Add {
+            name,
+            config,
+            reply,
+        })
+        .await
     }
     pub async fn remove(&self, name: String) -> anyhow::Result<String> {
-        self.send_fallible(|reply| Command::Remove { name, reply }).await
+        self.send_fallible(|reply| Command::Remove { name, reply })
+            .await
     }
     pub async fn events_subscribe(&self) -> anyhow::Result<broadcast::Receiver<Event>> {
-        self.send_infallible(|reply| Command::EventsSubscribe { reply }).await
+        self.send_infallible(|reply| Command::EventsSubscribe { reply })
+            .await
     }
     pub async fn log_path(&self, name: String, stream: String) -> anyhow::Result<PathBuf> {
-        self.send_fallible(|reply| Command::LogPath { name, stream, reply }).await
+        self.send_fallible(|reply| Command::LogPath {
+            name,
+            stream,
+            reply,
+        })
+        .await
     }
     pub async fn main_log_path(&self) -> anyhow::Result<Option<PathBuf>> {
-        self.send_infallible(|reply| Command::MainLogPath { reply }).await
+        self.send_infallible(|reply| Command::MainLogPath { reply })
+            .await
     }
     pub async fn shutdown(&self) -> anyhow::Result<()> {
-        self.send_fallible(|reply| Command::Shutdown { reply }).await
+        self.send_fallible(|reply| Command::Shutdown { reply })
+            .await
     }
 }
 
@@ -201,13 +290,19 @@ struct PendingShutdown {
     sock_path: PathBuf,
 }
 
-async fn actor_loop(
-    mut sup: Rvisor,
-    mut rx: mpsc::Receiver<Command>,
-    tx: mpsc::Sender<Command>,
-) {
-    let mut pending_stops: HashMap<String, oneshot::Sender<anyhow::Result<String>>> = HashMap::new();
-    let mut pending_restarts: HashMap<String, oneshot::Sender<anyhow::Result<String>>> = HashMap::new();
+struct PendingOps<'a> {
+    stops: &'a mut HashMap<String, oneshot::Sender<anyhow::Result<String>>>,
+    restarts: &'a mut HashMap<String, oneshot::Sender<anyhow::Result<String>>>,
+    update: &'a mut Option<PendingUpdate>,
+    stop_all: &'a mut Option<PendingStopAll>,
+    shutdown: &'a mut Option<PendingShutdown>,
+}
+
+async fn actor_loop(mut sup: Rvisor, mut rx: mpsc::Receiver<Command>, tx: mpsc::Sender<Command>) {
+    let mut pending_stops: HashMap<String, oneshot::Sender<anyhow::Result<String>>> =
+        HashMap::new();
+    let mut pending_restarts: HashMap<String, oneshot::Sender<anyhow::Result<String>>> =
+        HashMap::new();
     let mut pending_update: Option<PendingUpdate> = None;
     let mut pending_stop_all: Option<PendingStopAll> = None;
     let mut pending_shutdown: Option<PendingShutdown> = None;
@@ -228,31 +323,31 @@ async fn actor_loop(
             Command::EventsSubscribe { reply } => {
                 let _ = reply.send(sup.events());
             }
-            Command::LogPath { name, stream, reply } => {
-                match sup.programs.get(&name) {
-                    None => {
-                        let _ = reply.send(Err(anyhow::anyhow!("unknown program {}", name)));
-                    }
-                    Some(h) => {
-                        let path = if stream == "stderr" {
-                            h.config.stderr_log.clone()
-                        } else {
-                            h.config.stdout_log.clone()
-                        };
-                        match path {
-                            Some(p) => {
-                                let _ = reply.send(Ok(p));
-                            }
-                            None => {
-                                let _ = reply.send(Err(anyhow::anyhow!(
-                                    "log not configured for {}",
-                                    name
-                                )));
-                            }
+            Command::LogPath {
+                name,
+                stream,
+                reply,
+            } => match sup.programs.get(&name) {
+                None => {
+                    let _ = reply.send(Err(anyhow::anyhow!("unknown program {}", name)));
+                }
+                Some(h) => {
+                    let path = if stream == "stderr" {
+                        h.config.stderr_log.clone()
+                    } else {
+                        h.config.stdout_log.clone()
+                    };
+                    match path {
+                        Some(p) => {
+                            let _ = reply.send(Ok(p));
+                        }
+                        None => {
+                            let _ =
+                                reply.send(Err(anyhow::anyhow!("log not configured for {}", name)));
                         }
                     }
                 }
-            }
+            },
             Command::MainLogPath { reply } => {
                 let _ = reply.send(sup.logfile.clone());
             }
@@ -279,7 +374,11 @@ async fn actor_loop(
                     &mut pending_stop_all,
                 );
             }
-            Command::Signal { program, signal, reply } => {
+            Command::Signal {
+                program,
+                signal,
+                reply,
+            } => {
                 let result = handle_signal(&mut sup, program, &signal);
                 let _ = reply.send(result);
             }
@@ -311,7 +410,11 @@ async fn actor_loop(
                 let result = handle_clear(&sup, program).await;
                 let _ = reply.send(result);
             }
-            Command::Add { name, config, reply } => {
+            Command::Add {
+                name,
+                config,
+                reply,
+            } => {
                 let result = handle_add(&mut sup, &name, &config);
                 let _ = reply.send(result);
             }
@@ -325,23 +428,27 @@ async fn actor_loop(
             Command::InternalReady { name, pid } => {
                 handle_internal_ready(&mut sup, &name, pid);
             }
-            Command::InternalExit { name, pid, exit_code } => {
+            Command::InternalExit {
+                name,
+                pid,
+                exit_code,
+            } => {
                 handle_internal_exit(&mut sup, &tx, name, pid, exit_code);
             }
-            Command::InternalStopped { name, pid, result } => {
-                handle_internal_stopped(
-                    &mut sup,
-                    &tx,
-                    name,
-                    pid,
-                    result,
-                    &mut pending_stops,
-                    &mut pending_restarts,
-                    &mut pending_update,
-                    &mut pending_stop_all,
-                    &mut pending_shutdown,
-                );
-            }
+            Command::InternalStopped { name, pid, result } => handle_internal_stopped(
+                &mut sup,
+                &tx,
+                name,
+                pid,
+                result,
+                PendingOps {
+                    stops: &mut pending_stops,
+                    restarts: &mut pending_restarts,
+                    update: &mut pending_update,
+                    stop_all: &mut pending_stop_all,
+                    shutdown: &mut pending_shutdown,
+                },
+            ),
             Command::InternalAutostart { name } => {
                 handle_internal_autostart(&mut sup, &tx, &name);
             }
@@ -721,7 +828,11 @@ fn compute_reread(sup: &Rvisor, config: &Config) -> RereadSummary {
     removed.sort();
     changed.sort();
 
-    RereadSummary { added, changed, removed }
+    RereadSummary {
+        added,
+        changed,
+        removed,
+    }
 }
 
 fn handle_update(
@@ -783,13 +894,14 @@ fn handle_update(
     // Changed programs
     for name in new_names.intersection(&current_names) {
         if let Some(new_cfg) = new_map.remove(name) {
-            let handle = sup.programs.get_mut(name).expect("handle exists");
-            if handle.config != new_cfg {
-                summary.changed.push(name.clone());
-                handle.config = new_cfg;
-                if matches!(handle.state, ProgramState::Running | ProgramState::Starting) {
-                    to_stop_changed.push(name.clone());
-                    summary.restarted.push(name.clone());
+            if let Some(handle) = sup.programs.get_mut(name) {
+                if handle.config != new_cfg {
+                    summary.changed.push(name.clone());
+                    handle.config = new_cfg;
+                    if matches!(handle.state, ProgramState::Running | ProgramState::Starting) {
+                        to_stop_changed.push(name.clone());
+                        summary.restarted.push(name.clone());
+                    }
                 }
             }
         }
@@ -976,13 +1088,14 @@ fn handle_shutdown(
     let names: Vec<String> = sup.programs.keys().cloned().collect();
     let mut stop_infos: Vec<(String, i32, String, u64, bool)> = Vec::new();
     for name in &names {
-        let h = sup.programs.get_mut(name).unwrap();
-        if let Some(pid) = h.pid {
-            let sig = h.config.stopsignal.clone();
-            let wait = h.config.stopwaitsecs;
-            let kg = h.config.killasgroup;
-            h.state = ProgramState::Stopping;
-            stop_infos.push((name.clone(), pid, sig, wait, kg));
+        if let Some(h) = sup.programs.get_mut(name) {
+            if let Some(pid) = h.pid {
+                let sig = h.config.stopsignal.clone();
+                let wait = h.config.stopwaitsecs;
+                let kg = h.config.killasgroup;
+                h.state = ProgramState::Stopping;
+                stop_infos.push((name.clone(), pid, sig, wait, kg));
+            }
         }
     }
 
@@ -1069,10 +1182,8 @@ fn handle_internal_exit(
         handle.pid = None;
         handle.start_time = None;
 
-        if autorestart == Autorestart::Never {
-            handle.state = ProgramState::Exited;
-            ExitDecision::Exited
-        } else if autorestart == Autorestart::Unexpected && expected {
+        if autorestart == Autorestart::Never || (autorestart == Autorestart::Unexpected && expected)
+        {
             handle.state = ProgramState::Exited;
             ExitDecision::Exited
         } else {
@@ -1127,14 +1238,11 @@ fn handle_internal_stopped(
     name: String,
     pid: i32,
     result: anyhow::Result<()>,
-    pending_stops: &mut HashMap<String, oneshot::Sender<anyhow::Result<String>>>,
-    pending_restarts: &mut HashMap<String, oneshot::Sender<anyhow::Result<String>>>,
-    pending_update: &mut Option<PendingUpdate>,
-    pending_stop_all: &mut Option<PendingStopAll>,
-    pending_shutdown: &mut Option<PendingShutdown>,
+    pending: PendingOps<'_>,
 ) {
     // Whether this program should be removed from the map (update removed it).
-    let in_to_remove = pending_update
+    let in_to_remove = pending
+        .update
         .as_ref()
         .map(|pu| pu.to_remove.contains(&name))
         .unwrap_or(false);
@@ -1159,77 +1267,84 @@ fn handle_internal_stopped(
     // Remove program from the map if it was deleted by an update.
     if in_to_remove {
         sup.programs.remove(&name);
-        if let Some(pu) = pending_update.as_mut() {
+        if let Some(pu) = pending.update.as_mut() {
             pu.to_remove.remove(&name);
         }
     }
 
     // Check pending_stops — propagate stop errors to the caller.
-    if let Some(reply) = pending_stops.remove(&name) {
+    if let Some(reply) = pending.stops.remove(&name) {
         match result {
-            Ok(()) => { let _ = reply.send(Ok(format!("{} stopped", name))); }
-            Err(e) => { let _ = reply.send(Err(e)); }
+            Ok(()) => {
+                let _ = reply.send(Ok(format!("{} stopped", name)));
+            }
+            Err(e) => {
+                let _ = reply.send(Err(e));
+            }
         }
     }
 
     // Check pending_restarts — propagate start errors.
-    if let Some(reply) = pending_restarts.remove(&name) {
+    if let Some(reply) = pending.restarts.remove(&name) {
         let _ = reply.send(do_start_one(sup, tx, &name, true));
     }
 
     // Check pending_stop_all
-    let stop_all_done = if let Some(psa) = pending_stop_all.as_mut() {
+    let stop_all_done = if let Some(psa) = pending.stop_all.as_mut() {
         psa.waiting.remove(&name);
         psa.waiting.is_empty()
     } else {
         false
     };
     if stop_all_done {
-        let psa = pending_stop_all.take().unwrap();
-        if psa.then_start_all {
-            let names: Vec<String> = sup.programs.keys().cloned().collect();
-            for n in names {
-                let _ = do_start_one(sup, tx, &n, true);
+        if let Some(psa) = pending.stop_all.take() {
+            if psa.then_start_all {
+                let names: Vec<String> = sup.programs.keys().cloned().collect();
+                for n in names {
+                    let _ = do_start_one(sup, tx, &n, true);
+                }
+                let _ = psa.reply.send(Ok("restarted all programs".to_string()));
+            } else {
+                let _ = psa.reply.send(Ok("stopped all programs".to_string()));
             }
-            let _ = psa.reply.send(Ok("restarted all programs".to_string()));
-        } else {
-            let _ = psa.reply.send(Ok("stopped all programs".to_string()));
         }
     }
 
     // Check pending_update
-    let update_done = if let Some(pu) = pending_update.as_mut() {
+    let update_done = if let Some(pu) = pending.update.as_mut() {
         pu.waiting.remove(&name);
         pu.waiting.is_empty()
     } else {
         false
     };
     if update_done {
-        let mut pu = pending_update.take().unwrap();
-        for start_name in &pu.to_start {
-            if do_start_one(sup, tx, start_name, true).is_ok() {
-                pu.summary.started.push(start_name.clone());
+        if let Some(mut pu) = pending.update.take() {
+            for start_name in &pu.to_start {
+                if do_start_one(sup, tx, start_name, true).is_ok() {
+                    pu.summary.started.push(start_name.clone());
+                }
             }
+            let _ = pu.reply.send(Ok(pu.summary));
         }
-        let _ = pu.reply.send(Ok(pu.summary));
     }
 
     // Check pending_shutdown
-    let shutdown_done = if let Some(ps) = pending_shutdown.as_mut() {
+    let shutdown_done = if let Some(ps) = pending.shutdown.as_mut() {
         ps.waiting.remove(&name);
         ps.waiting.is_empty()
     } else {
         false
     };
     if shutdown_done {
-        let ps = pending_shutdown.take().unwrap();
-        tokio::spawn(async move {
-            if let Some(p) = ps.pidfile {
-                let _ = tokio::fs::remove_file(p).await;
-            }
-            let _ = tokio::fs::remove_file(ps.sock_path).await;
-            std::process::exit(0);
-        });
+        if let Some(ps) = pending.shutdown.take() {
+            tokio::spawn(async move {
+                if let Some(p) = ps.pidfile {
+                    let _ = tokio::fs::remove_file(p).await;
+                }
+                let _ = tokio::fs::remove_file(ps.sock_path).await;
+                std::process::exit(0);
+            });
+        }
     }
 }
 

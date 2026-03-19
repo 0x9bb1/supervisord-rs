@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rvisor::{actor, config, ipc, service, supervisor};
-use tempfile::TempDir;
 use std::sync::{Mutex as StdMutex, OnceLock};
+use tempfile::TempDir;
 
 fn write_config(path: &Path, content: &str) {
     std::fs::write(path, content).expect("write config");
@@ -18,12 +18,7 @@ sock_path = "{}"
     )
 }
 
-fn program_config(
-    name: &str,
-    command: &str,
-    stdout_log: Option<&Path>,
-    extra: &str,
-) -> String {
+fn program_config(name: &str, command: &str, stdout_log: Option<&Path>, extra: &str) -> String {
     let escaped_command = command.replace('\'', "''");
     let mut config = format!(
         r#"
@@ -41,16 +36,16 @@ command = '{escaped_command}'
 
 async fn start_daemon(config_path: &Path) -> anyhow::Result<tokio::task::JoinHandle<()>> {
     let config = config::load(Some(config_path))?;
-    let sock_path = config.supervisord.sock_path.clone();
-    let allowed_uids = config.supervisord.allowed_uids.clone();
+    let sock_path = config.supervisor.sock_path.clone();
+    let allowed_uids = config.supervisor.allowed_uids.clone();
     // spawn_actor handles autostart internally (with expanded numprocs names)
     let handle = actor::spawn_actor(
         config_path.to_path_buf(),
         config.programs.clone(),
         std::collections::HashMap::new(),
-        config.supervisord.pidfile.clone(),
-        config.supervisord.sock_path.clone(),
-        config.supervisord.logfile.clone(),
+        config.supervisor.pidfile.clone(),
+        config.supervisor.sock_path.clone(),
+        config.supervisor.logfile.clone(),
     );
     let sock_path_run = sock_path.clone();
     let server_handle = tokio::spawn(async move {
@@ -67,7 +62,6 @@ async fn start_daemon(config_path: &Path) -> anyhow::Result<tokio::task::JoinHan
 
 async fn request(sock_path: &Path, command: &str, program: Option<&str>) -> ipc::Response {
     let request = ipc::Request {
-
         command: command.to_string(),
         program: program.map(|p| p.to_string()),
         ..Default::default()
@@ -85,7 +79,12 @@ async fn status_start_stop_flow() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("sleepy", "sleep 5", None, "autostart = false\nstartsecs = 0\n")
+        program_config(
+            "sleepy",
+            "sleep 5",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -93,8 +92,7 @@ async fn status_start_stop_flow() {
     let response = request(&sock_path, "status", Some("sleepy")).await;
     assert!(response.ok);
     let data = response.data.unwrap();
-    let statuses: Vec<supervisor::ProgramStatus> =
-        serde_json::from_value(data).unwrap();
+    let statuses: Vec<supervisor::ProgramStatus> = serde_json::from_value(data).unwrap();
     assert_eq!(statuses[0].state, "STOPPED");
 
     let response = request(&sock_path, "start", Some("sleepy")).await;
@@ -127,7 +125,12 @@ async fn restart_changes_pid() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("restartable", "sleep 10", None, "autostart = false\nstartsecs = 0\n")
+        program_config(
+            "restartable",
+            "sleep 10",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -160,7 +163,12 @@ async fn reread_update_detects_changes() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("alpha", "sleep 10", None, "autostart = false\nstartsecs = 0\n")
+        program_config(
+            "alpha",
+            "sleep 10",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -175,8 +183,18 @@ async fn reread_update_detects_changes() {
     let updated_text = format!(
         "{}{}{}",
         base_config(&sock_path),
-        program_config("alpha", "sleep 11", None, "autostart = false\nstartsecs = 0\n"),
-        program_config("beta", "sleep 5", None, "autostart = false\nstartsecs = 0\n"),
+        program_config(
+            "alpha",
+            "sleep 11",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        ),
+        program_config(
+            "beta",
+            "sleep 5",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        ),
     );
     write_config(&config_path, &updated_text);
 
@@ -231,12 +249,11 @@ async fn logtail_returns_last_lines() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "logtail".to_string(),
             program: Some("talker".to_string()),
             lines: Some(2),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -264,10 +281,9 @@ async fn events_stream_emits_process_state() {
     let mut framed = ipc::send_stream_request(
         &sock_path,
         ipc::Request {
-
             command: "events".to_string(),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -304,10 +320,9 @@ async fn avail_lists_programs() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "avail".to_string(),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -342,11 +357,10 @@ async fn clear_truncates_logs() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "clear".to_string(),
             program: Some("clearme".to_string()),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -373,11 +387,10 @@ async fn add_and_remove_program() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "add".to_string(),
             program: Some("alpha".to_string()),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -385,11 +398,10 @@ async fn add_and_remove_program() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "remove".to_string(),
             program: Some("alpha".to_string()),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -423,13 +435,12 @@ async fn logtail_bytes_limits_output() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "logtail".to_string(),
             program: Some("bytes".to_string()),
             lines: Some(10),
             bytes: Some(5),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -469,13 +480,12 @@ async fn logtail_since_filters_old_logs() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "logtail".to_string(),
             program: Some("since".to_string()),
             lines: Some(10),
             since: Some(future),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -621,7 +631,12 @@ async fn signal_terminates_program() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("signalme", "sleep 10", None, "autostart = false\nautorestart = false\n")
+        program_config(
+            "signalme",
+            "sleep 10",
+            None,
+            "autostart = false\nautorestart = false\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -632,12 +647,11 @@ async fn signal_terminates_program() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "signal".to_string(),
             program: Some("signalme".to_string()),
             signal: Some("TERM".to_string()),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -685,14 +699,13 @@ async fn logtail_follow_returns_incremental_lines() {
     let mut framed = ipc::send_stream_request(
         &sock_path,
         ipc::Request {
-
             command: "logtail".to_string(),
             program: Some("follower".to_string()),
             lines: Some(1),
             follow: Some(true),
             offset: Some(0),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -724,7 +737,12 @@ async fn reload_updates_configuration() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("alpha", "sleep 10", None, "autostart = false\nstartsecs = 0\n")
+        program_config(
+            "alpha",
+            "sleep 10",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -735,8 +753,18 @@ async fn reload_updates_configuration() {
     let updated_text = format!(
         "{}{}{}",
         base_config(&sock_path),
-        program_config("alpha", "sleep 11", None, "autostart = false\nstartsecs = 0\n"),
-        program_config("beta", "sleep 5", None, "autostart = false\nstartsecs = 0\n"),
+        program_config(
+            "alpha",
+            "sleep 11",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        ),
+        program_config(
+            "beta",
+            "sleep 5",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        ),
     );
     write_config(&config_path, &updated_text);
 
@@ -759,7 +787,7 @@ async fn reload_updates_configuration() {
 async fn shutdown_removes_pidfile() {
     let temp = TempDir::new().unwrap();
     let sock_path = temp.path().join("supervisord.sock");
-    let pidfile = temp.path().join("supervisord.pid");
+    let pidfile = temp.path().join("rvisor.pid");
     let config_path = temp.path().join("supervisord.toml");
     let config_text = format!(
         r#"[supervisord]
@@ -792,10 +820,9 @@ pidfile = "{}"
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "shutdown".to_string(),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -861,10 +888,9 @@ async fn sighup_triggers_reload() {
     let _ = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "shutdown".to_string(),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await;
     let _ = tokio::time::timeout(Duration::from_secs(3), child.wait())
@@ -913,8 +939,7 @@ async fn backoff_delay_grows_exponentially() {
         tokio::time::sleep(Duration::from_millis(200)).await;
         let resp = request(&sock_path, "status", Some("crasher")).await;
         if let Some(data) = resp.data {
-            let statuses: Vec<supervisor::ProgramStatus> =
-                serde_json::from_value(data).unwrap();
+            let statuses: Vec<supervisor::ProgramStatus> = serde_json::from_value(data).unwrap();
             final_state = statuses[0].state.clone();
             if final_state == "FATAL" {
                 break;
@@ -966,16 +991,12 @@ async fn log_fully_flushed_before_stop_returns() {
     request(&sock_path, "stop", Some("writer")).await;
     // No sleep here — stop must guarantee log is flushed before returning.
 
-    let size_at_stop = std::fs::metadata(&stdout_log)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let size_at_stop = std::fs::metadata(&stdout_log).map(|m| m.len()).unwrap_or(0);
 
     // Wait a little and check the file did NOT grow after stop returned,
     // proving all buffered data was already flushed.
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let size_after_wait = std::fs::metadata(&stdout_log)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let size_after_wait = std::fs::metadata(&stdout_log).map(|m| m.len()).unwrap_or(0);
 
     assert!(size_at_stop > 0, "log file should have content");
     assert_eq!(
@@ -997,7 +1018,12 @@ async fn startsecs_zero_is_running_immediately() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("fast", "sleep 10", None, "autostart = false\nstartsecs = 0\n")
+        program_config(
+            "fast",
+            "sleep 10",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -1023,7 +1049,12 @@ async fn startsecs_keeps_starting_state_during_wait() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("slow", "sleep 10", None, "autostart = false\nstartsecs = 2\n")
+        program_config(
+            "slow",
+            "sleep 10",
+            None,
+            "autostart = false\nstartsecs = 2\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -1048,7 +1079,12 @@ async fn startsecs_transitions_to_running_after_elapsed() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("delayed", "sleep 10", None, "autostart = false\nstartsecs = 1\n")
+        program_config(
+            "delayed",
+            "sleep 10",
+            None,
+            "autostart = false\nstartsecs = 1\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -1148,7 +1184,12 @@ async fn stopped_state_on_manual_stop() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("svc", "sleep 30", None, "autostart = false\nstartsecs = 0\n")
+        program_config(
+            "svc",
+            "sleep 30",
+            None,
+            "autostart = false\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -1186,7 +1227,11 @@ async fn socket_allows_authorized_uid() {
     let handle = start_daemon(&config_path).await.unwrap();
 
     let response = request(&sock_path, "status", None).await;
-    assert!(response.ok, "authorized uid should be allowed: {:?}", response.message);
+    assert!(
+        response.ok,
+        "authorized uid should be allowed: {:?}",
+        response.message
+    );
 
     handle.abort();
 }
@@ -1209,15 +1254,13 @@ async fn socket_rejects_unauthorized_uid() {
     let result = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "status".to_string(),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await;
-    match result {
-        Ok(resp) => assert!(!resp.ok, "unauthorized uid should be rejected"),
-        Err(_) => {} // Connection closed without response is also acceptable.
+    if let Ok(resp) = result {
+        assert!(!resp.ok, "unauthorized uid should be rejected");
     }
 
     handle.abort();
@@ -1255,7 +1298,12 @@ async fn numprocs_avail_shows_all_instances() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("worker", "sleep 10", None, "autostart = false\nnumprocs = 3\n")
+        program_config(
+            "worker",
+            "sleep 10",
+            None,
+            "autostart = false\nnumprocs = 3\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -1280,7 +1328,12 @@ async fn numprocs_all_autostart() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("worker", "sleep 10", None, "autostart = true\nnumprocs = 2\nstartsecs = 0\n")
+        program_config(
+            "worker",
+            "sleep 10",
+            None,
+            "autostart = true\nnumprocs = 2\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -1306,7 +1359,12 @@ async fn numprocs_stop_one_does_not_affect_others() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("worker", "sleep 10", None, "autostart = false\nnumprocs = 2\nstartsecs = 0\n")
+        program_config(
+            "worker",
+            "sleep 10",
+            None,
+            "autostart = false\nnumprocs = 2\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let handle = start_daemon(&config_path).await.unwrap();
@@ -1320,10 +1378,8 @@ async fn numprocs_stop_one_does_not_affect_others() {
 
     let r0 = request(&sock_path, "status", Some("worker:worker_00")).await;
     let r1 = request(&sock_path, "status", Some("worker:worker_01")).await;
-    let s0: Vec<supervisor::ProgramStatus> =
-        serde_json::from_value(r0.data.unwrap()).unwrap();
-    let s1: Vec<supervisor::ProgramStatus> =
-        serde_json::from_value(r1.data.unwrap()).unwrap();
+    let s0: Vec<supervisor::ProgramStatus> = serde_json::from_value(r0.data.unwrap()).unwrap();
+    let s1: Vec<supervisor::ProgramStatus> = serde_json::from_value(r1.data.unwrap()).unwrap();
     assert_eq!(s0[0].state, "STOPPED");
     assert_eq!(s1[0].state, "RUNNING");
 
@@ -1334,8 +1390,8 @@ async fn numprocs_stop_one_does_not_affect_others() {
 fn service_install_and_uninstall_writes_file() {
     let _guard = service_env_lock().lock().unwrap();
     let temp = TempDir::new().unwrap();
-    std::env::set_var("SUPERVISORD_SERVICE_DIR", temp.path());
-    std::env::set_var("SUPERVISORD_SERVICE_NOOP", "1");
+    std::env::set_var("RVISOR_SERVICE_DIR", temp.path());
+    std::env::set_var("RVISOR_SERVICE_NOOP", "1");
     let result = service::run(service::ServiceCommand::Install, None).unwrap();
     assert!(result.contains("installed"));
     let installed_path = result.trim_start_matches("installed ").trim();
@@ -1344,16 +1400,16 @@ fn service_install_and_uninstall_writes_file() {
     let result = service::run(service::ServiceCommand::Uninstall, None).unwrap();
     assert!(result.contains("uninstalled"));
     assert!(!std::path::Path::new(installed_path).exists());
-    std::env::remove_var("SUPERVISORD_SERVICE_DIR");
-    std::env::remove_var("SUPERVISORD_SERVICE_NOOP");
+    std::env::remove_var("RVISOR_SERVICE_DIR");
+    std::env::remove_var("RVISOR_SERVICE_NOOP");
 }
 
 #[test]
 fn service_start_stop_status_noop() {
     let _guard = service_env_lock().lock().unwrap();
     let temp = TempDir::new().unwrap();
-    std::env::set_var("SUPERVISORD_SERVICE_DIR", temp.path());
-    std::env::set_var("SUPERVISORD_SERVICE_NOOP", "1");
+    std::env::set_var("RVISOR_SERVICE_DIR", temp.path());
+    std::env::set_var("RVISOR_SERVICE_NOOP", "1");
 
     let _ = service::run(service::ServiceCommand::Install, None).unwrap();
     let result = service::run(service::ServiceCommand::Start, None).unwrap();
@@ -1372,8 +1428,8 @@ fn service_start_stop_status_noop() {
     assert_eq!(result, "reload noop");
 
     let _ = service::run(service::ServiceCommand::Uninstall, None).unwrap();
-    std::env::remove_var("SUPERVISORD_SERVICE_DIR");
-    std::env::remove_var("SUPERVISORD_SERVICE_NOOP");
+    std::env::remove_var("RVISOR_SERVICE_DIR");
+    std::env::remove_var("RVISOR_SERVICE_NOOP");
 }
 fn service_env_lock() -> &'static StdMutex<()> {
     static LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
@@ -1410,7 +1466,12 @@ async fn autostart_true_starts_program_at_daemon_launch() {
     let config_text = format!(
         "{}{}",
         base_config(&sock_path),
-        program_config("autostarted", "sleep 30", None, "autostart = true\nstartsecs = 0\n")
+        program_config(
+            "autostarted",
+            "sleep 30",
+            None,
+            "autostart = true\nstartsecs = 0\n"
+        )
     );
     write_config(&config_path, &config_text);
     let mut child = spawn_binary_daemon(&config_path, &sock_path).await;
@@ -1525,7 +1586,10 @@ async fn environment_vars_injected_into_process() {
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     let content = std::fs::read_to_string(&stdout_log).unwrap_or_default();
-    assert!(content.contains("hello_world"), "stdout_log content: {content:?}");
+    assert!(
+        content.contains("hello_world"),
+        "stdout_log content: {content:?}"
+    );
 
     handle.abort();
 }
@@ -1577,7 +1641,10 @@ async fn stderr_log_captures_stderr_output() {
             "stderrtest",
             r#"sh -c "echo errline >&2""#,
             None,
-            &format!("autostart = false\nstderr_log = \"{}\"\n", stderr_log.display())
+            &format!(
+                "autostart = false\nstderr_log = \"{}\"\n",
+                stderr_log.display()
+            )
         )
     );
     write_config(&config_path, &config_text);
@@ -1587,7 +1654,10 @@ async fn stderr_log_captures_stderr_output() {
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     let content = std::fs::read_to_string(&stderr_log).unwrap_or_default();
-    assert!(content.contains("errline"), "stderr_log content: {content:?}");
+    assert!(
+        content.contains("errline"),
+        "stderr_log content: {content:?}"
+    );
 
     handle.abort();
 }
@@ -1605,7 +1675,10 @@ async fn logtail_stderr_stream_reads_stderr_log() {
             "stderrtail",
             r#"sh -c "echo x >&2; echo y >&2; echo z >&2""#,
             None,
-            &format!("autostart = false\nstderr_log = \"{}\"\n", stderr_log.display())
+            &format!(
+                "autostart = false\nstderr_log = \"{}\"\n",
+                stderr_log.display()
+            )
         )
     );
     write_config(&config_path, &config_text);
@@ -1617,13 +1690,12 @@ async fn logtail_stderr_stream_reads_stderr_log() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "logtail".to_string(),
             program: Some("stderrtail".to_string()),
             lines: Some(2),
             stream: Some("stderr".to_string()),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -1785,7 +1857,11 @@ async fn start_already_running_program_is_idempotent() {
 
     let response = request(&sock_path, "start", Some("idempotent")).await;
     assert!(response.ok);
-    assert!(response.message.contains("already running"), "message: {}", response.message);
+    assert!(
+        response.message.contains("already running"),
+        "message: {}",
+        response.message
+    );
 
     handle.abort();
 }
@@ -1795,7 +1871,7 @@ async fn maintail_reads_from_daemon_logfile() {
     let temp = TempDir::new().unwrap();
     let sock_path = temp.path().join("supervisord.sock");
     let config_path = temp.path().join("supervisord.toml");
-    let logfile = temp.path().join("supervisord.log");
+    let logfile = temp.path().join("rvisor.log");
     std::fs::write(&logfile, "alpha\nbeta\ngamma\n").unwrap();
 
     let config_text = format!(
@@ -1809,11 +1885,10 @@ async fn maintail_reads_from_daemon_logfile() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "maintail".to_string(),
             lines: Some(2),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
@@ -1835,16 +1910,19 @@ async fn maintail_without_logfile_returns_error() {
     let response = ipc::send_request(
         &sock_path,
         ipc::Request {
-
             command: "maintail".to_string(),
             lines: Some(10),
-        ..Default::default()
-    },
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
     assert!(!response.ok);
-    assert!(response.message.contains("logfile"), "message: {}", response.message);
+    assert!(
+        response.message.contains("logfile"),
+        "message: {}",
+        response.message
+    );
 
     handle.abort();
 }
@@ -1879,7 +1957,10 @@ async fn update_removes_program_deleted_from_config() {
     let status_resp = request(&sock_path, "status", Some("todelete")).await;
     let statuses: Vec<supervisor::ProgramStatus> =
         serde_json::from_value(status_resp.data.unwrap()).unwrap();
-    assert!(statuses.is_empty(), "removed program should not appear in status");
+    assert!(
+        statuses.is_empty(),
+        "removed program should not appear in status"
+    );
 
     handle.abort();
 }

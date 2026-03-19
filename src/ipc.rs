@@ -2,12 +2,12 @@ use crate::actor;
 use crate::config;
 use anyhow::Context;
 use bytes::Bytes;
+use futures::{SinkExt, StreamExt};
+use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::net::{UnixListener, UnixStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use futures::{SinkExt, StreamExt};
-use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Request {
@@ -87,7 +87,8 @@ pub async fn run_server(
                 if !authorized {
                     // Send a structured error so the client gets ok=false
                     // rather than an abrupt connection close.
-                    let _ = send_error_response(stream, "connection refused: unauthorized uid").await;
+                    let _ =
+                        send_error_response(stream, "connection refused: unauthorized uid").await;
                     return;
                 }
             }
@@ -138,10 +139,7 @@ pub async fn send_stream_request(
     Ok(framed)
 }
 
-async fn handle_stream(
-    stream: UnixStream,
-    handle: actor::RvisorHandle,
-) -> anyhow::Result<()> {
+async fn handle_stream(stream: UnixStream, handle: actor::RvisorHandle) -> anyhow::Result<()> {
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
     while let Some(frame) = framed.next().await {
         let frame = frame?;
@@ -161,34 +159,23 @@ async fn handle_stream(
     Ok(())
 }
 
-async fn handle_request(
-    request: Request,
-    handle: actor::RvisorHandle,
-) -> Response {
+async fn handle_request(request: Request, handle: actor::RvisorHandle) -> Response {
     match request.command.as_str() {
-        "status" => {
-            match handle.status(request.program).await {
-                Ok(statuses) => Response {
-                    ok: true,
-                    message: "ok".to_string(),
-                    data: serde_json::to_value(statuses).ok(),
-                },
-                Err(e) => Response {
-                    ok: false,
-                    message: e.to_string(),
-                    data: None,
-                },
-            }
-        }
-        "start" => {
-            result_to_response(handle.start(request.program).await)
-        }
-        "restart" => {
-            result_to_response(handle.restart(request.program).await)
-        }
-        "stop" => {
-            result_to_response(handle.stop(request.program).await)
-        }
+        "status" => match handle.status(request.program).await {
+            Ok(statuses) => Response {
+                ok: true,
+                message: "ok".to_string(),
+                data: serde_json::to_value(statuses).ok(),
+            },
+            Err(e) => Response {
+                ok: false,
+                message: e.to_string(),
+                data: None,
+            },
+        },
+        "start" => result_to_response(handle.start(request.program).await),
+        "restart" => result_to_response(handle.restart(request.program).await),
+        "stop" => result_to_response(handle.stop(request.program).await),
         "reread" => {
             let config_path = handle.config_path.clone();
             let config = match tokio::task::spawn_blocking(move || config::load(Some(&config_path)))
@@ -197,7 +184,13 @@ async fn handle_request(
                 .and_then(|r| r)
             {
                 Ok(c) => c,
-                Err(e) => return Response { ok: false, message: e.to_string(), data: None },
+                Err(e) => {
+                    return Response {
+                        ok: false,
+                        message: e.to_string(),
+                        data: None,
+                    }
+                }
             };
             match handle.reread(config).await {
                 Ok(summary) => Response {
@@ -220,7 +213,13 @@ async fn handle_request(
                 .and_then(|r| r)
             {
                 Ok(c) => c,
-                Err(e) => return Response { ok: false, message: e.to_string(), data: None },
+                Err(e) => {
+                    return Response {
+                        ok: false,
+                        message: e.to_string(),
+                        data: None,
+                    }
+                }
             };
             match handle.update(config).await {
                 Ok(summary) => Response {
@@ -243,7 +242,13 @@ async fn handle_request(
                 .and_then(|r| r)
             {
                 Ok(c) => c,
-                Err(e) => return Response { ok: false, message: e.to_string(), data: None },
+                Err(e) => {
+                    return Response {
+                        ok: false,
+                        message: e.to_string(),
+                        data: None,
+                    }
+                }
             };
             match handle.reload(config).await {
                 Ok(summary) => Response {
@@ -258,20 +263,18 @@ async fn handle_request(
                 },
             }
         }
-        "pid" => {
-            match handle.pid().await {
-                Ok(pid) => Response {
-                    ok: true,
-                    message: "ok".to_string(),
-                    data: serde_json::to_value(pid).ok(),
-                },
-                Err(e) => Response {
-                    ok: false,
-                    message: e.to_string(),
-                    data: None,
-                },
-            }
-        }
+        "pid" => match handle.pid().await {
+            Ok(pid) => Response {
+                ok: true,
+                message: "ok".to_string(),
+                data: serde_json::to_value(pid).ok(),
+            },
+            Err(e) => Response {
+                ok: false,
+                message: e.to_string(),
+                data: None,
+            },
+        },
         "signal" => {
             let Some(signal) = request.signal else {
                 return Response {
@@ -309,7 +312,13 @@ async fn handle_request(
 
             let path = match handle.log_path(name.clone(), stream).await {
                 Ok(p) => p,
-                Err(e) => return Response { ok: false, message: e.to_string(), data: None },
+                Err(e) => {
+                    return Response {
+                        ok: false,
+                        message: e.to_string(),
+                        data: None,
+                    }
+                }
             };
 
             match read_tail_lines(&path, lines, offset, bytes, since).await {
@@ -332,7 +341,13 @@ async fn handle_request(
             let since = request.since;
             let log_path = match handle.main_log_path().await {
                 Ok(p) => p,
-                Err(e) => return Response { ok: false, message: e.to_string(), data: None },
+                Err(e) => {
+                    return Response {
+                        ok: false,
+                        message: e.to_string(),
+                        data: None,
+                    }
+                }
             };
             match log_path {
                 Some(path) => match read_tail_lines(&path, lines, offset, bytes, since).await {
@@ -349,28 +364,24 @@ async fn handle_request(
                 },
                 None => Response {
                     ok: false,
-                    message: "supervisord logfile is not configured".to_string(),
+                    message: "rvisor logfile is not configured".to_string(),
                     data: None,
                 },
             }
         }
-        "avail" => {
-            match handle.avail().await {
-                Ok(names) => Response {
-                    ok: true,
-                    message: "ok".to_string(),
-                    data: serde_json::to_value(names).ok(),
-                },
-                Err(e) => Response {
-                    ok: false,
-                    message: e.to_string(),
-                    data: None,
-                },
-            }
-        }
-        "clear" => {
-            result_to_response(handle.clear(request.program).await)
-        }
+        "avail" => match handle.avail().await {
+            Ok(names) => Response {
+                ok: true,
+                message: "ok".to_string(),
+                data: serde_json::to_value(names).ok(),
+            },
+            Err(e) => Response {
+                ok: false,
+                message: e.to_string(),
+                data: None,
+            },
+        },
+        "clear" => result_to_response(handle.clear(request.program).await),
         "add" => {
             let Some(name) = request.program else {
                 return Response {
@@ -386,7 +397,13 @@ async fn handle_request(
                 .and_then(|r| r)
             {
                 Ok(c) => c,
-                Err(e) => return Response { ok: false, message: e.to_string(), data: None },
+                Err(e) => {
+                    return Response {
+                        ok: false,
+                        message: e.to_string(),
+                        data: None,
+                    }
+                }
             };
             result_to_response(handle.add(name, config).await)
         }
@@ -460,7 +477,7 @@ async fn read_tail_lines(
         let mut content = String::new();
         use tokio::io::AsyncReadExt;
         file.read_to_string(&mut content).await?;
-        let new_offset = offset + content.as_bytes().len() as u64;
+        let new_offset = offset + content.len() as u64;
         let lines_vec = content
             .lines()
             .map(|line| line.to_string())
@@ -543,7 +560,10 @@ async fn handle_logtail_stream(
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<notify::Event, notify::Error>| {
             if let Ok(event) = res {
-                if matches!(event.kind, EventKind::Modify(_)|EventKind::Create(_)|EventKind::Remove(_)) {
+                if matches!(
+                    event.kind,
+                    EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_)
+                ) {
                     let _ = tx.send(());
                 }
             }
@@ -553,7 +573,7 @@ async fn handle_logtail_stream(
     let watch_path = path.parent().unwrap_or_else(|| Path::new("/"));
     watcher.watch(watch_path, RecursiveMode::NonRecursive)?;
 
-    while let Some(_) = rx.recv().await {
+    while rx.recv().await.is_some() {
         match read_tail_lines(&path, lines, offset, None, None).await {
             Ok(reply) => {
                 offset = reply.offset;

@@ -22,7 +22,7 @@ pub fn run(command: ServiceCommand, config_path: Option<&Path>) -> anyhow::Resul
             std::fs::create_dir_all(&service_dir)?;
             let content = service_content(config_path)?;
             std::fs::write(&service_path, content)?;
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_err() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_err() {
                 daemon_reload()?;
                 enable_service()?;
             }
@@ -32,35 +32,35 @@ pub fn run(command: ServiceCommand, config_path: Option<&Path>) -> anyhow::Resul
             if service_path.exists() {
                 std::fs::remove_file(&service_path)?;
             }
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_err() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_err() {
                 disable_service()?;
                 daemon_reload()?;
             }
             Ok(format!("uninstalled {}", service_path.display()))
         }
         ServiceCommand::Start => {
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_ok() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_ok() {
                 return Ok("start noop".to_string());
             }
             ensure_installed(&service_path)?;
             start_service(&service_path)
         }
         ServiceCommand::Stop => {
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_ok() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_ok() {
                 return Ok("stop noop".to_string());
             }
             ensure_installed(&service_path)?;
             stop_service(&service_path)
         }
         ServiceCommand::Status => {
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_ok() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_ok() {
                 return Ok("status noop".to_string());
             }
             ensure_installed(&service_path)?;
             status_service(&service_path)
         }
         ServiceCommand::Enable => {
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_ok() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_ok() {
                 return Ok("enable noop".to_string());
             }
             ensure_installed(&service_path)?;
@@ -68,7 +68,7 @@ pub fn run(command: ServiceCommand, config_path: Option<&Path>) -> anyhow::Resul
             Ok("enabled".to_string())
         }
         ServiceCommand::Disable => {
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_ok() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_ok() {
                 return Ok("disable noop".to_string());
             }
             ensure_installed(&service_path)?;
@@ -76,7 +76,7 @@ pub fn run(command: ServiceCommand, config_path: Option<&Path>) -> anyhow::Resul
             Ok("disabled".to_string())
         }
         ServiceCommand::Restart => {
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_ok() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_ok() {
                 return Ok("restart noop".to_string());
             }
             ensure_installed(&service_path)?;
@@ -84,7 +84,7 @@ pub fn run(command: ServiceCommand, config_path: Option<&Path>) -> anyhow::Resul
             start_service(&service_path)
         }
         ServiceCommand::Reload => {
-            if std::env::var("SUPERVISORD_SERVICE_NOOP").is_ok() {
+            if std::env::var("RVISOR_SERVICE_NOOP").is_ok() {
                 return Ok("reload noop".to_string());
             }
             ensure_installed(&service_path)?;
@@ -94,7 +94,7 @@ pub fn run(command: ServiceCommand, config_path: Option<&Path>) -> anyhow::Resul
 }
 
 fn resolve_service_dir() -> anyhow::Result<PathBuf> {
-    if let Ok(dir) = std::env::var("SUPERVISORD_SERVICE_DIR") {
+    if let Ok(dir) = std::env::var("RVISOR_SERVICE_DIR") {
         return Ok(PathBuf::from(dir));
     }
     let home = std::env::var("HOME").context("HOME is not set")?;
@@ -104,7 +104,7 @@ fn resolve_service_dir() -> anyhow::Result<PathBuf> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        return Ok(PathBuf::from(home).join(".config/systemd/user"));
+        Ok(PathBuf::from(home).join(".config/systemd/user"))
     }
 }
 
@@ -115,7 +115,7 @@ fn service_file_path(dir: &Path) -> anyhow::Result<PathBuf> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        return Ok(dir.join("rvisor.service"));
+        Ok(dir.join("rvisor.service"))
     }
 }
 
@@ -150,7 +150,7 @@ fn service_content(config_path: Option<&Path>) -> anyhow::Result<String> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        return Ok(format!(
+        Ok(format!(
             r#"[Unit]
 Description=rvisor
 
@@ -163,7 +163,7 @@ WantedBy=default.target
 "#,
             exe.display(),
             config_arg
-        ));
+        ))
     }
 }
 
@@ -187,7 +187,7 @@ fn start_service(_path: &Path) -> anyhow::Result<String> {
             .status()
             .context("launchctl load")?;
         ensure_success("launchctl load", status)?;
-        return Ok("started".to_string());
+        Ok("started".to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -198,7 +198,7 @@ fn start_service(_path: &Path) -> anyhow::Result<String> {
             .status()
             .context("systemctl start")?;
         ensure_success("systemctl start", status)?;
-        return Ok("started".to_string());
+        Ok("started".to_string())
     }
 }
 
@@ -211,7 +211,7 @@ fn stop_service(_path: &Path) -> anyhow::Result<String> {
             .status()
             .context("launchctl unload")?;
         ensure_success("launchctl unload", status)?;
-        return Ok("stopped".to_string());
+        Ok("stopped".to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -222,7 +222,7 @@ fn stop_service(_path: &Path) -> anyhow::Result<String> {
             .status()
             .context("systemctl stop")?;
         ensure_success("systemctl stop", status)?;
-        return Ok("stopped".to_string());
+        Ok("stopped".to_string())
     }
 }
 
@@ -283,9 +283,9 @@ fn status_service(_path: &Path) -> anyhow::Result<String> {
         let pid = map.get("MainPID").cloned().unwrap_or_default();
         let code = map.get("ExecMainStatus").cloned().unwrap_or_default();
         let unit = map.get("UnitFileState").cloned().unwrap_or_default();
-        return Ok(format!(
+        Ok(format!(
             "active_state={active} sub_state={sub} pid={pid} exit_code={code} unit_state={unit}"
-        ));
+        ))
     }
 }
 
@@ -302,7 +302,7 @@ fn reload_service(_path: &Path) -> anyhow::Result<String> {
             .status()
             .context("launchctl kickstart")?;
         ensure_success("launchctl kickstart", status)?;
-        return Ok("reloaded".to_string());
+        Ok("reloaded".to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -313,14 +313,14 @@ fn reload_service(_path: &Path) -> anyhow::Result<String> {
             .status()
             .context("systemctl reload")?;
         ensure_success("systemctl reload", status)?;
-        return Ok("reloaded".to_string());
+        Ok("reloaded".to_string())
     }
 }
 
 fn daemon_reload() -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -330,14 +330,14 @@ fn daemon_reload() -> anyhow::Result<()> {
             .status()
             .context("systemctl daemon-reload")?;
         ensure_success("systemctl daemon-reload", status)?;
-        return Ok(());
+        Ok(())
     }
 }
 
 fn enable_service() -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -348,14 +348,14 @@ fn enable_service() -> anyhow::Result<()> {
             .status()
             .context("systemctl enable")?;
         ensure_success("systemctl enable", status)?;
-        return Ok(());
+        Ok(())
     }
 }
 
 fn disable_service() -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -366,7 +366,7 @@ fn disable_service() -> anyhow::Result<()> {
             .status()
             .context("systemctl disable")?;
         ensure_success("systemctl disable", status)?;
-        return Ok(());
+        Ok(())
     }
 }
 
